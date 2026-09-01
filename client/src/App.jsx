@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { io } from 'socket.io-client'
 import './App.css'
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+
 function App() {
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
@@ -20,7 +22,7 @@ function App() {
 
     const endpoint = isLogin ? '/login' : '/signup'
     try {
-      const res = await fetch(`http://localhost:4000${endpoint}`, {
+      const res = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -44,7 +46,7 @@ function App() {
   }
 
   async function fetchDocuments() {
-    const res = await fetch('http://localhost:4000/documents', {
+    const res = await fetch(`${API_URL}/documents`, {
       headers: { Authorization: `Bearer ${token}` }
     })
     const data = await res.json()
@@ -54,7 +56,7 @@ function App() {
   useEffect(() => {
     if (token) {
       fetchDocuments()
-      socketRef.current = io('http://localhost:4000')
+      socketRef.current = io(API_URL)
     }
     return () => {
       if (socketRef.current) socketRef.current.disconnect()
@@ -65,7 +67,7 @@ function App() {
     e.preventDefault()
     if (!newTitle.trim()) return
 
-    await fetch('http://localhost:4000/documents', {
+    await fetch(`${API_URL}/documents`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -78,7 +80,7 @@ function App() {
   }
 
   async function deleteDocument(id) {
-    await fetch(`http://localhost:4000/documents/${id}`, {
+    await fetch(`${API_URL}/documents/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` }
     })
@@ -107,7 +109,7 @@ function App() {
   }
 
   async function saveAndClose() {
-    await fetch(`http://localhost:4000/documents/${activeDoc.id}`, {
+    await fetch(`${API_URL}/documents/${activeDoc.id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
