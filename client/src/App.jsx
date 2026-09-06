@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { io } from 'socket.io-client'
 import './App.css'
+import './Sidebar.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
@@ -11,10 +12,16 @@ function App() {
   const [token, setToken] = useState('')
   const [error, setError] = useState('')
   const [documents, setDocuments] = useState([])
+  const [search, setSearch] = useState('')
   const [newTitle, setNewTitle] = useState('')
   const [activeDoc, setActiveDoc] = useState(null)
   const [content, setContent] = useState('')
+  const [collaborators, setCollaborators] = useState([])
+  const [typingUser, setTypingUser] = useState(null)
+
   const socketRef = useRef(null)
+  const saveTimeout = useRef(null)
+  const typingTimeout = useRef(null)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -79,24 +86,55 @@ function App() {
     fetchDocuments()
   }
 
-  async function deleteDocument(id) {
+  async function deleteDocument(id, e) {
+    e.stopPropagation()
     await fetch(`${API_URL}/documents/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` }
     })
     fetchDocuments()
+    if (activeDoc?.id === id) closeDocument()
   }
 
   function openDocument(doc) {
+    // leave whatever document we were previously in
+    if (activeDoc) {
+      socketRef.current.emit('leave-document', { docId: activeDoc.id })
+    }
+
     setActiveDoc(doc)
     setContent(doc.content || '')
+    setCollaborators([])
+    setTypingUser(null)
 
-    socketRef.current.emit('join-document', doc.id)
+    socketRef.current.emit('join-document', { docId: doc.id, name: email })
 
     socketRef.current.off('receive-edit')
     socketRef.current.on('receive-edit', (newContent) => {
       setContent(newContent)
     })
+
+    socketRef.current.off('presence-update')
+    socketRef.current.on('presence-update', ({ docId, users }) => {
+      if (docId === doc.id) setCollaborators(users)
+    })
+
+    socketRef.current.off('user-typing')
+    socketRef.current.on('user-typing', ({ docId, name }) => {
+      if (docId !== doc.id || name === email) return
+      setTypingUser(name)
+      clearTimeout(typingTimeout.current)
+      typingTimeout.current = setTimeout(() => setTypingUser(null), 2000)
+    })
+  }
+
+  function closeDocument() {
+    if (activeDoc) {
+      socketRef.current.emit('leave-document', { docId: activeDoc.id })
+    }
+    setActiveDoc(null)
+    setCollaborators([])
+    setTypingUser(null)
   }
 
   function handleContentChange(e) {
@@ -106,80 +144,139 @@ function App() {
       docId: activeDoc.id,
       content: newContent
     })
+    socketRef.current.emit('typing', { docId: activeDoc.id, name: email })
+    scheduleSave({ title: activeDoc.title, content: newContent })
   }
 
-  async function saveAndClose() {
-    await fetch(`${API_URL}/documents/${activeDoc.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({ title: activeDoc.title, content })
-    })
-    setActiveDoc(null)
-    fetchDocuments()
-  }
-
-  if (token && activeDoc) {
-    return (
-      <div style={{ maxWidth: 700, margin: '40px auto', fontFamily: 'sans-serif' }}>
-        <button onClick={saveAndClose} style={{ marginBottom: 10 }}>
-          ← Save &amp; Back
-        </button>
-        <h1>{activeDoc.title}</h1>
-        <textarea
-          value={content}
-          onChange={handleContentChange}
-          style={{ width: '100%', height: 400, padding: 12, fontSize: 16 }}
-        />
-      </div>
+  function handleTitleChange(e) {
+    const title = e.target.value
+    setActiveDoc((prev) => ({ ...prev, title }))
+    setDocuments((prev) =>
+      prev.map((d) => (d.id === activeDoc.id ? { ...d, title } : d))
     )
+    scheduleSave({ title, content })
   }
 
+  // Debounced auto-save — fires 600ms after the user stops typing
+  function scheduleSave(patch) {
+    clearTimeout(saveTimeout.current)
+    saveTimeout.current = setTimeout(async () => {
+      await fetch(`${API_URL}/documents/${activeDoc.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(patch)
+      })
+    }, 600)
+  }
+
+  const filteredDocs = documents.filter((d) =>
+    d.title.toLowerCase().includes(search.toLowerCase())
+  )
+
+  // ---------------- Logged-in view (sidebar + main) ----------------
   if (token) {
     return (
-      <div style={{ maxWidth: 500, margin: '60px auto', fontFamily: 'sans-serif' }}>
-        <h1>My Documents</h1>
+      <div className="dash-shell">
+        <aside className="sidebar">
+          <div className="brand">Collab Editor</div>
 
-        <form onSubmit={createDocument} style={{ marginBottom: 20 }}>
-          <input
-            type="text"
-            placeholder="New document title"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            style={{ padding: 8, width: '70%' }}
-          />
-          <button type="submit" style={{ padding: 8, marginLeft: 8 }}>
-            Create
-          </button>
-        </form>
+          <form onSubmit={createDocument} className="new-doc-form">
+            <input
+              type="text"
+              placeholder="New document title"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+            />
+            <button type="submit">+ Create</button>
+          </form>
 
-        <ul style={{ listStyle: 'none', padding: 0 }}>
-          {documents.map((doc) => (
-            <li
-              key={doc.id}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '10px 0',
-                borderBottom: '1px solid #ccc'
-              }}
-            >
-              <span
+          <div className="search">
+            <input
+              placeholder="Search documents"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="doc-list">
+            {filteredDocs.length === 0 && (
+              <div className="doc-list-empty">No documents yet</div>
+            )}
+            {filteredDocs.map((doc) => (
+              <div
+                key={doc.id}
+                className={'doc-item' + (activeDoc?.id === doc.id ? ' active' : '')}
                 onClick={() => openDocument(doc)}
-                style={{ cursor: 'pointer', textDecoration: 'underline' }}
               >
-                {doc.title}
-              </span>
-              <button onClick={() => deleteDocument(doc.id)}>Delete</button>
-            </li>
-          ))}
-        </ul>
+                <span className="dot" />
+                <span className="name">{doc.title || 'Untitled document'}</span>
+                <button className="delete-btn" onClick={(e) => deleteDocument(doc.id, e)}>
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="sidebar-foot">
+            Signed in as {email}
+            <button className="logout-link" onClick={() => setToken('')}>
+              Log out
+            </button>
+          </div>
+        </aside>
+
+        <main className="main">
+          {!activeDoc ? (
+            <div className="empty-state">
+              <p>Select a document, or create a new one to start writing.</p>
+            </div>
+          ) : (
+            <>
+              <div className="topbar">
+                <div className="title-wrap">
+                  <input
+                    className="doc-title"
+                    value={activeDoc.title}
+                    onChange={handleTitleChange}
+                  />
+                  <div className="meta">
+                    {typingUser ? `${typingUser} is typing…` : 'All changes saved'}
+                  </div>
+                </div>
+
+                <div className="presence">
+                  <div className="avatars">
+                    {collaborators
+                      .filter((c) => c.name !== email)
+                      .map((c) => (
+                        <div key={c.id} className="avatar live" title={c.name}>
+                          {c.name?.[0]?.toUpperCase()}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="editor-area">
+                <div className="page">
+                  <textarea
+                    value={content}
+                    onChange={handleContentChange}
+                    placeholder="Start writing here — everyone with access sees your changes instantly."
+                  />
+                </div>
+              </div>
+            </>
+          )}
+        </main>
       </div>
     )
   }
 
+  // ---------------- Login / Signup view ----------------
   return (
     <div style={{ maxWidth: 300, margin: '80px auto', fontFamily: 'sans-serif' }}>
       <h1>{isLogin ? 'Login' : 'Sign Up'}</h1>
