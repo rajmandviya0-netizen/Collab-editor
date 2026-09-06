@@ -176,7 +176,52 @@ function App() {
     d.title.toLowerCase().includes(search.toLowerCase())
   )
 
-  // ---------------- Logged-in view (sidebar + main) ----------------
+  // ---------------- Logged-in: document open (full-screen editor, no sidebar) ----------------
+  if (token && activeDoc) {
+    return (
+      <div className="editor-fullscreen">
+        <div className="topbar">
+          <button className="back-btn" onClick={closeDocument}>
+            ← All documents
+          </button>
+
+          <div className="title-wrap">
+            <input
+              className="doc-title"
+              value={activeDoc.title}
+              onChange={handleTitleChange}
+            />
+            <div className="meta">
+              {typingUser ? `${typingUser} is typing…` : 'All changes saved'}
+            </div>
+          </div>
+
+          <div className="presence">
+            <div className="avatars">
+              {collaborators
+                .filter((c) => c.name !== email)
+                .map((c) => (
+                  <div key={c.id} className="avatar live" title={c.name}>
+                    {c.name?.[0]?.toUpperCase()}
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="editor-area editor-area-full">
+          <textarea
+            className="full-textarea"
+            value={content}
+            onChange={handleContentChange}
+            placeholder="Start writing here — everyone with access sees your changes instantly."
+          />
+        </div>
+      </div>
+    )
+  }
+
+  // ---------------- Logged-in: document list (sidebar + empty state) ----------------
   if (token) {
     return (
       <div className="dash-shell">
@@ -208,7 +253,7 @@ function App() {
             {filteredDocs.map((doc) => (
               <div
                 key={doc.id}
-                className={'doc-item' + (activeDoc?.id === doc.id ? ' active' : '')}
+                className="doc-item"
                 onClick={() => openDocument(doc)}
               >
                 <span className="dot" />
@@ -229,48 +274,9 @@ function App() {
         </aside>
 
         <main className="main">
-          {!activeDoc ? (
-            <div className="empty-state">
-              <p>Select a document, or create a new one to start writing.</p>
-            </div>
-          ) : (
-            <>
-              <div className="topbar">
-                <div className="title-wrap">
-                  <input
-                    className="doc-title"
-                    value={activeDoc.title}
-                    onChange={handleTitleChange}
-                  />
-                  <div className="meta">
-                    {typingUser ? `${typingUser} is typing…` : 'All changes saved'}
-                  </div>
-                </div>
-
-                <div className="presence">
-                  <div className="avatars">
-                    {collaborators
-                      .filter((c) => c.name !== email)
-                      .map((c) => (
-                        <div key={c.id} className="avatar live" title={c.name}>
-                          {c.name?.[0]?.toUpperCase()}
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="editor-area">
-                <div className="page">
-                  <textarea
-                    value={content}
-                    onChange={handleContentChange}
-                    placeholder="Start writing here — everyone with access sees your changes instantly."
-                  />
-                </div>
-              </div>
-            </>
-          )}
+          <div className="empty-state">
+            <p>Select a document, or create a new one to start writing.</p>
+          </div>
         </main>
       </div>
     )
