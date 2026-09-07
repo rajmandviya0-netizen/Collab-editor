@@ -182,7 +182,6 @@
   font-size: 12px;
   font-weight: 600;
   color: #fff;
-  background: var(--accent-teal);
   border: 2px solid var(--paper);
   margin-left: -8px;
   position: relative;
@@ -202,10 +201,26 @@
   100% { opacity: 0; }
 }
 
+.editor-area { flex: 1; overflow-y: auto; padding: 36px 40px 80px; display: flex; justify-content: center; }
+.page { width: 100%; max-width: 700px; }
+.page textarea {
+  width: 100%;
+  min-height: 60vh;
+  border: none;
+  background: transparent;
+  resize: none;
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--text-main);
+}
+.page textarea:focus { outline: none; }
+
 /* ---------- Full-screen editor (no sidebar, full width) ---------- */
 .editor-fullscreen {
   --paper: #FAF8F4;
   --paper-line: #E3DFD5;
+  --ink-navy: #1C2530;
   --text-main: #2B2A26;
   --text-dim: #7A766C;
   --accent-teal: #3F6659;
@@ -241,7 +256,7 @@
 }
 .back-btn:hover { border-color: var(--accent-gold); color: var(--text-main); }
 
-.editor-area-full { flex: 1; overflow-y: auto; padding: 30px 60px 80px; }
+.editor-area-full { padding: 30px 60px 80px; justify-content: stretch; }
 .full-textarea {
   width: 100%;
   height: 100%;
@@ -255,3 +270,15 @@
   color: var(--text-main);
 }
 .full-textarea:focus { outline: none; }
+
+.share-btn {
+  background: var(--ink-navy);
+  color: #E7E4DC;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.share-btn:hover { opacity: 0.85; }

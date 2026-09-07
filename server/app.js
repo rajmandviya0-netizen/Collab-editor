@@ -79,10 +79,17 @@ app.post('/documents', requireAuth, async (req, res) => {
   }
 });
 
+// Returns documents the user owns AND documents shared with them
 app.get('/documents', requireAuth, async (req, res) => {
   try {
     const docs = await prisma.document.findMany({
-      where: { ownerId: req.userId }
+      where: {
+        OR: [
+          { ownerId: req.userId },
+          { sharedWith: { some: { userId: req.userId } } }
+        ]
+      },
+      orderBy: { updatedAt: 'desc' }
     });
     res.json(docs);
   } catch (err) {
@@ -91,10 +98,17 @@ app.get('/documents', requireAuth, async (req, res) => {
   }
 });
 
+// Allows the owner OR anyone the document was shared with
 app.get('/documents/:id', requireAuth, async (req, res) => {
   try {
     const doc = await prisma.document.findFirst({
-      where: { id: Number(req.params.id), ownerId: req.userId }
+      where: {
+        id: Number(req.params.id),
+        OR: [
+          { ownerId: req.userId },
+          { sharedWith: { some: { userId: req.userId } } }
+        ]
+      }
     });
     if (!doc) return res.status(404).json({ error: 'Not found' });
     res.json(doc);
@@ -104,11 +118,18 @@ app.get('/documents/:id', requireAuth, async (req, res) => {
   }
 });
 
+// Allows the owner OR anyone the document was shared with to edit
 app.put('/documents/:id', requireAuth, async (req, res) => {
   try {
     const { title, content } = req.body;
     const doc = await prisma.document.updateMany({
-      where: { id: Number(req.params.id), ownerId: req.userId },
+      where: {
+        id: Number(req.params.id),
+        OR: [
+          { ownerId: req.userId },
+          { sharedWith: { some: { userId: req.userId } } }
+        ]
+      },
       data: { title, content }
     });
     if (doc.count === 0) return res.status(404).json({ error: 'Not found' });
@@ -119,6 +140,7 @@ app.put('/documents/:id', requireAuth, async (req, res) => {
   }
 });
 
+// Only the owner can delete
 app.delete('/documents/:id', requireAuth, async (req, res) => {
   try {
     const doc = await prisma.document.deleteMany({
@@ -126,6 +148,43 @@ app.delete('/documents/:id', requireAuth, async (req, res) => {
     });
     if (doc.count === 0) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+});
+
+// Only the owner can share their document with someone else
+app.post('/documents/:id/share', requireAuth, async (req, res) => {
+  try {
+    const { email } = req.body;
+    const docId = Number(req.params.id);
+
+    const doc = await prisma.document.findFirst({
+      where: { id: docId, ownerId: req.userId }
+    });
+    if (!doc) {
+      return res.status(404).json({ error: 'Document not found or you are not the owner' });
+    }
+
+    const userToShareWith = await prisma.user.findUnique({ where: { email } });
+    if (!userToShareWith) {
+      return res.status(404).json({ error: 'No account found with that email' });
+    }
+
+    if (userToShareWith.id === req.userId) {
+      return res.status(400).json({ error: 'You already own this document' });
+    }
+
+    await prisma.documentAccess.upsert({
+      where: {
+        documentId_userId: { documentId: docId, userId: userToShareWith.id }
+      },
+      update: {},
+      create: { documentId: docId, userId: userToShareWith.id }
+    });
+
+    res.json({ success: true, sharedWith: email });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Something went wrong' });

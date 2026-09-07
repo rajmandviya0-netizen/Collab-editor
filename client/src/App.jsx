@@ -137,6 +137,32 @@ function App() {
     setTypingUser(null)
   }
 
+  async function shareDocument() {
+    const friendEmail = window.prompt("Enter your friend's email to share this document:")
+    if (!friendEmail) return
+
+    try {
+      const res = await fetch(`${API_URL}/documents/${activeDoc.id}/share`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ email: friendEmail })
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        alert(data.error || 'Could not share document')
+        return
+      }
+
+      alert(`Document shared with ${data.sharedWith}!`)
+    } catch (err) {
+      alert('Could not reach server')
+    }
+  }
+
   function handleContentChange(e) {
     const newContent = e.target.value
     setContent(newContent)
@@ -206,6 +232,9 @@ function App() {
                   </div>
                 ))}
             </div>
+            <button className="share-btn" onClick={shareDocument}>
+              Share
+            </button>
           </div>
         </div>
 
@@ -313,4 +342,4 @@ function App() {
   )
 }
 
-export default App
+export default Apps
