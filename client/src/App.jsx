@@ -157,10 +157,16 @@ function App() {
         return
       }
 
-      alert(`Document shared with ${data.sharedWith}!`)
+      alert(`Document shared with ${data.sharedWith}! They'll see it in their sidebar next time they log in.`)
     } catch (err) {
       alert('Could not reach server')
     }
+  }
+
+  function copyViewLink() {
+    const link = `${window.location.origin}/view/${activeDoc.id}`
+    navigator.clipboard.writeText(link)
+    alert('View-only link copied! Anyone logged in can open it with this link, but cannot edit.')
   }
 
   function handleContentChange(e) {
@@ -232,6 +238,9 @@ function App() {
                   </div>
                 ))}
             </div>
+            <button className="link-btn" onClick={copyViewLink}>
+              Copy view link
+            </button>
             <button className="share-btn" onClick={shareDocument}>
               Share
             </button>
@@ -313,31 +322,44 @@ function App() {
 
   // ---------------- Login / Signup view ----------------
   return (
-    <div style={{ maxWidth: 300, margin: '80px auto', fontFamily: 'sans-serif' }}>
-      <h1>{isLogin ? 'Login' : 'Sign Up'}</h1>
-      <form onSubmit={handleSubmit}>
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={{ display: 'block', width: '100%', marginBottom: 10, padding: 8 }}
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ display: 'block', width: '100%', marginBottom: 10, padding: 8 }}
-        />
-        <button type="submit" style={{ width: '100%', padding: 8 }}>
-          {isLogin ? 'Log In' : 'Sign Up'}
+    <div className="auth-shell">
+      <div className="auth-card">
+        <div className="auth-brand">Collab Editor</div>
+        <h1 className="auth-heading">
+          {isLogin ? 'Welcome back' : 'Create your account'}
+        </h1>
+        <p className="auth-subheading">
+          {isLogin
+            ? 'Log in to keep writing with your team.'
+            : 'Start writing and collaborating in real time.'}
+        </p>
+
+        <form onSubmit={handleSubmit} className="auth-form">
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="auth-input"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="auth-input"
+          />
+          <button type="submit" className="auth-submit">
+            {isLogin ? 'Log In' : 'Sign Up'}
+          </button>
+        </form>
+
+        {error && <p className="auth-error">{error}</p>}
+
+        <button onClick={() => setIsLogin(!isLogin)} className="auth-switch">
+          {isLogin ? "Need an account? Sign up" : 'Have an account? Log in'}
         </button>
-      </form>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-      <button onClick={() => setIsLogin(!isLogin)} style={{ marginTop: 10 }}>
-        {isLogin ? 'Need an account? Sign up' : 'Have an account? Log in'}
-      </button>
+      </div>
     </div>
   )
 }
