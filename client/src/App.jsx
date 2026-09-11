@@ -18,6 +18,11 @@ function App() {
   const [content, setContent] = useState('')
   const [collaborators, setCollaborators] = useState([])
   const [typingUser, setTypingUser] = useState(null)
+  const [isViewOnly, setIsViewOnly] = useState(false)
+  const [pendingViewId, setPendingViewId] = useState(() => {
+    const match = window.location.pathname.match(/^\/view\/(\d+)$/)
+    return match ? match[1] : null
+  })
 
   const socketRef = useRef(null)
   const saveTimeout = useRef(null)
@@ -70,6 +75,34 @@ function App() {
     }
   }, [token])
 
+  // If the person arrived via a "Copy view link" URL, open that document
+  // automatically once they're logged in (view-only mode).
+  useEffect(() => {
+    if (!token || !pendingViewId || !socketRef.current) return
+
+    async function openFromLink() {
+      try {
+        const res = await fetch(`${API_URL}/documents/${pendingViewId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (!res.ok) {
+          alert("You don't have access to this document. Ask the owner to share it with you.")
+          window.history.replaceState({}, '', '/')
+          setPendingViewId(null)
+          return
+        }
+        const doc = await res.json()
+        openDocument(doc, { viewOnly: true })
+      } catch (err) {
+        window.history.replaceState({}, '', '/')
+        setPendingViewId(null)
+      }
+    }
+
+    openFromLink()
+    setPendingViewId(null)
+  }, [token, pendingViewId])
+
   async function createDocument(e) {
     e.preventDefault()
     if (!newTitle.trim()) return
@@ -96,7 +129,7 @@ function App() {
     if (activeDoc?.id === id) closeDocument()
   }
 
-  function openDocument(doc) {
+  function openDocument(doc, options = {}) {
     // leave whatever document we were previously in
     if (activeDoc) {
       socketRef.current.emit('leave-document', { docId: activeDoc.id })
@@ -106,6 +139,8 @@ function App() {
     setContent(doc.content || '')
     setCollaborators([])
     setTypingUser(null)
+    setIsViewOnly(!!options.viewOnly)
+    window.history.replaceState({}, '', `/view/${doc.id}`)
 
     socketRef.current.emit('join-document', { docId: doc.id, name: email })
 
@@ -135,6 +170,8 @@ function App() {
     setActiveDoc(null)
     setCollaborators([])
     setTypingUser(null)
+    setIsViewOnly(false)
+    window.history.replaceState({}, '', '/')
   }
 
   async function shareDocument() {
@@ -170,6 +207,7 @@ function App() {
   }
 
   function handleContentChange(e) {
+    if (isViewOnly) return
     const newContent = e.target.value
     setContent(newContent)
     socketRef.current.emit('edit-document', {
@@ -181,6 +219,7 @@ function App() {
   }
 
   function handleTitleChange(e) {
+    if (isViewOnly) return
     const title = e.target.value
     setActiveDoc((prev) => ({ ...prev, title }))
     setDocuments((prev) =>
@@ -222,9 +261,14 @@ function App() {
               className="doc-title"
               value={activeDoc.title}
               onChange={handleTitleChange}
+              readOnly={isViewOnly}
             />
             <div className="meta">
-              {typingUser ? `${typingUser} is typing…` : 'All changes saved'}
+              {isViewOnly
+                ? 'View only'
+                : typingUser
+                ? `${typingUser} is typing…`
+                : 'All changes saved'}
             </div>
           </div>
 
@@ -238,12 +282,16 @@ function App() {
                   </div>
                 ))}
             </div>
-            <button className="link-btn" onClick={copyViewLink}>
-              Copy view link
-            </button>
-            <button className="share-btn" onClick={shareDocument}>
-              Share
-            </button>
+            {!isViewOnly && (
+              <>
+                <button className="link-btn" onClick={copyViewLink}>
+                  Copy view link
+                </button>
+                <button className="share-btn" onClick={shareDocument}>
+                  Share
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -252,6 +300,7 @@ function App() {
             className="full-textarea"
             value={content}
             onChange={handleContentChange}
+            readOnly={isViewOnly}
             placeholder="Start writing here — everyone with access sees your changes instantly."
           />
         </div>
