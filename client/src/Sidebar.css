@@ -275,6 +275,9 @@
   color: var(--text-main);
 }
 .full-textarea:focus { outline: none; }
+.full-textarea:read-only { color: var(--text-dim); cursor: default; }
+.doc-title:read-only { cursor: default; background: transparent; }
+.doc-title:read-only:focus { box-shadow: none; background: transparent; }
 
 .share-btn {
   background: var(--ink-navy);
@@ -312,14 +315,14 @@
 }
 .auth-card {
   width: 100%;
-  max-width: 380px;
+  max-width: 520px;
   background: rgba(255,255,255,0.97);
-  border-radius: 16px;
-  padding: 36px 32px;
+  border-radius: 20px;
+  padding: 56px 56px;
   box-shadow: 0 20px 60px rgba(0,0,0,0.35);
 }
 .auth-brand {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -327,33 +330,33 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  margin-bottom: 18px;
+  margin-bottom: 22px;
 }
-.auth-heading { font-size: 26px; font-weight: 700; color: #1F2937; margin: 0 0 6px; }
-.auth-subheading { font-size: 14px; color: #6B7280; margin: 0 0 26px; }
-.auth-form { display: flex; flex-direction: column; gap: 12px; }
+.auth-heading { font-size: 34px; font-weight: 700; color: #1F2937; margin: 0 0 8px; }
+.auth-subheading { font-size: 15.5px; color: #6B7280; margin: 0 0 34px; }
+.auth-form { display: flex; flex-direction: column; gap: 16px; }
 .auth-input {
-  padding: 12px 14px;
-  border-radius: 8px;
+  padding: 15px 18px;
+  border-radius: 10px;
   border: 1.5px solid #E5E7EB;
-  font-size: 14px;
+  font-size: 15px;
   transition: border-color .15s ease;
 }
 .auth-input:focus { outline: none; border-color: #DB2777; }
 .auth-submit {
-  margin-top: 4px;
-  padding: 12px;
-  border-radius: 8px;
+  margin-top: 6px;
+  padding: 15px;
+  border-radius: 10px;
   border: none;
   color: #fff;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   background: linear-gradient(135deg, #6D28D9, #DB2777);
   transition: opacity .15s ease;
 }
 .auth-submit:hover { opacity: 0.9; }
-.auth-error { color: #DC2626; font-size: 13px; margin: 14px 0 0; }
+.auth-error { color: #DC2626; font-size: 14px; margin: 16px 0 0; }
 .auth-switch {
   display: block;
   margin: 20px auto 0;
