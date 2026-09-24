@@ -1,416 +1,277 @@
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { io } from 'socket.io-client'
-import './App.css'
-import './Sidebar.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
-function App() {
-  const [isLogin, setIsLogin] = useState(true)
+// ---------- tiny fetch helper ----------
+async function api(path, { method = 'GET', body, token } = {}) {
+  const res = await fetch(`${API_URL}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || data.message || 'Something went wrong')
+  return data
+}
+
+// ---------- header (shared by every page) ----------
+function Header({ onLogout }) {
+  return (
+    <header className="app-header">
+      <span className="brand">Collab Editor</span>
+      {onLogout && (
+        <button className="btn btn-ghost" onClick={onLogout}>
+          Log out
+        </button>
+      )}
+    </header>
+  )
+}
+
+// ---------- login / signup ----------
+function AuthPage({ onAuth }) {
+  const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [token, setToken] = useState('')
   const [error, setError] = useState('')
-  const [documents, setDocuments] = useState([])
-  const [search, setSearch] = useState('')
-  const [newTitle, setNewTitle] = useState('')
-  const [activeDoc, setActiveDoc] = useState(null)
-  const [content, setContent] = useState('')
-  const [collaborators, setCollaborators] = useState([])
-  const [typingUser, setTypingUser] = useState(null)
-  const [isViewOnly, setIsViewOnly] = useState(false)
-  const [pendingViewId, setPendingViewId] = useState(() => {
-    const match = window.location.pathname.match(/^\/view\/(\d+)$/)
-    return match ? match[1] : null
-  })
+  const [loading, setLoading] = useState(false)
 
-  const socketRef = useRef(null)
-  const saveTimeout = useRef(null)
-  const typingTimeout = useRef(null)
-
-  async function handleSubmit(e) {
-    e.preventDefault()
+  async function submit() {
     setError('')
-
-    const endpoint = isLogin ? '/login' : '/signup'
+    setLoading(true)
     try {
-      const res = await fetch(`${API_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      })
-      const data = await res.json()
-
-      if (!res.ok) {
-        setError(data.error || 'Something went wrong')
-        return
-      }
-
-      if (isLogin) {
-        setToken(data.token)
-      } else {
-        setIsLogin(true)
-        setError('Signed up! Now log in.')
-      }
+      const data = await api(`/${mode}`, { method: 'POST', body: { email, password } })
+      if (!data.token) throw new Error('No token received from server')
+      onAuth(data.token)
     } catch (err) {
-      setError('Could not reach server')
+      setError(err.message)
+    } finally {
+      setLoading(false)
     }
   }
 
-  async function fetchDocuments() {
-    const res = await fetch(`${API_URL}/documents`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    const data = await res.json()
-    setDocuments(data)
-  }
-
-  useEffect(() => {
-    if (token) {
-      fetchDocuments()
-      socketRef.current = io(API_URL)
-    }
-    return () => {
-      if (socketRef.current) socketRef.current.disconnect()
-    }
-  }, [token])
-
-  // If the person arrived via a "Copy view link" URL, open that document
-  // automatically once they're logged in (view-only mode).
-  useEffect(() => {
-    if (!token || !pendingViewId || !socketRef.current) return
-
-    async function openFromLink() {
-      try {
-        const res = await fetch(`${API_URL}/documents/${pendingViewId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        if (!res.ok) {
-          alert("You don't have access to this document. Ask the owner to share it with you.")
-          window.history.replaceState({}, '', '/')
-          setPendingViewId(null)
-          return
-        }
-        const doc = await res.json()
-        openDocument(doc, { viewOnly: true })
-      } catch (err) {
-        window.history.replaceState({}, '', '/')
-        setPendingViewId(null)
-      }
-    }
-
-    openFromLink()
-    setPendingViewId(null)
-  }, [token, pendingViewId])
-
-  async function createDocument(e) {
-    e.preventDefault()
-    if (!newTitle.trim()) return
-
-    await fetch(`${API_URL}/documents`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({ title: newTitle })
-    })
-    setNewTitle('')
-    fetchDocuments()
-  }
-
-  async function deleteDocument(id, e) {
-    e.stopPropagation()
-    await fetch(`${API_URL}/documents/${id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    fetchDocuments()
-    if (activeDoc?.id === id) closeDocument()
-  }
-
-  function openDocument(doc, options = {}) {
-    // leave whatever document we were previously in
-    if (activeDoc) {
-      socketRef.current.emit('leave-document', { docId: activeDoc.id })
-    }
-
-    setActiveDoc(doc)
-    setContent(doc.content || '')
-    setCollaborators([])
-    setTypingUser(null)
-    setIsViewOnly(!!options.viewOnly)
-    window.history.replaceState({}, '', `/view/${doc.id}`)
-
-    socketRef.current.emit('join-document', { docId: doc.id, name: email })
-
-    socketRef.current.off('receive-edit')
-    socketRef.current.on('receive-edit', (newContent) => {
-      setContent(newContent)
-    })
-
-    socketRef.current.off('presence-update')
-    socketRef.current.on('presence-update', ({ docId, users }) => {
-      if (docId === doc.id) setCollaborators(users)
-    })
-
-    socketRef.current.off('user-typing')
-    socketRef.current.on('user-typing', ({ docId, name }) => {
-      if (docId !== doc.id || name === email) return
-      setTypingUser(name)
-      clearTimeout(typingTimeout.current)
-      typingTimeout.current = setTimeout(() => setTypingUser(null), 2000)
-    })
-  }
-
-  function closeDocument() {
-    if (activeDoc) {
-      socketRef.current.emit('leave-document', { docId: activeDoc.id })
-    }
-    setActiveDoc(null)
-    setCollaborators([])
-    setTypingUser(null)
-    setIsViewOnly(false)
-    window.history.replaceState({}, '', '/')
-  }
-
-  async function shareDocument() {
-    const friendEmail = window.prompt("Enter your friend's email to share this document:")
-    if (!friendEmail) return
-
-    try {
-      const res = await fetch(`${API_URL}/documents/${activeDoc.id}/share`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ email: friendEmail })
-      })
-      const data = await res.json()
-
-      if (!res.ok) {
-        alert(data.error || 'Could not share document')
-        return
-      }
-
-      alert(`Document shared with ${data.sharedWith}! They'll see it in their sidebar next time they log in.`)
-    } catch (err) {
-      alert('Could not reach server')
-    }
-  }
-
-  function copyViewLink() {
-    const link = `${window.location.origin}/view/${activeDoc.id}`
-    navigator.clipboard.writeText(link)
-    alert('View-only link copied! Anyone logged in can open it with this link, but cannot edit.')
-  }
-
-  function handleContentChange(e) {
-    if (isViewOnly) return
-    const newContent = e.target.value
-    setContent(newContent)
-    socketRef.current.emit('edit-document', {
-      docId: activeDoc.id,
-      content: newContent
-    })
-    socketRef.current.emit('typing', { docId: activeDoc.id, name: email })
-    scheduleSave({ title: activeDoc.title, content: newContent })
-  }
-
-  function handleTitleChange(e) {
-    if (isViewOnly) return
-    const title = e.target.value
-    setActiveDoc((prev) => ({ ...prev, title }))
-    setDocuments((prev) =>
-      prev.map((d) => (d.id === activeDoc.id ? { ...d, title } : d))
-    )
-    scheduleSave({ title, content })
-  }
-
-  // Debounced auto-save — fires 600ms after the user stops typing
-  function scheduleSave(patch) {
-    clearTimeout(saveTimeout.current)
-    saveTimeout.current = setTimeout(async () => {
-      await fetch(`${API_URL}/documents/${activeDoc.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(patch)
-      })
-    }, 600)
-  }
-
-  const filteredDocs = documents.filter((d) =>
-    d.title.toLowerCase().includes(search.toLowerCase())
-  )
-
-  // ---------------- Logged-in: document open (full-screen editor, no sidebar) ----------------
-  if (token && activeDoc) {
-    return (
-      <div className="editor-fullscreen">
-        <div className="topbar">
-          <button className="back-btn" onClick={closeDocument}>
-            ← All documents
-          </button>
-
-          <div className="title-wrap">
-            <input
-              className="doc-title"
-              value={activeDoc.title}
-              onChange={handleTitleChange}
-              readOnly={isViewOnly}
-            />
-            <div className="meta">
-              {isViewOnly
-                ? 'View only'
-                : typingUser
-                ? `${typingUser} is typing…`
-                : 'All changes saved'}
-            </div>
-          </div>
-
-          <div className="presence">
-            <div className="avatars">
-              {collaborators
-                .filter((c) => c.name !== email)
-                .map((c) => (
-                  <div key={c.id} className="avatar live" title={c.name}>
-                    {c.name?.[0]?.toUpperCase()}
-                  </div>
-                ))}
-            </div>
-            {!isViewOnly && (
-              <>
-                <button className="link-btn" onClick={copyViewLink}>
-                  Copy view link
-                </button>
-                <button className="share-btn" onClick={shareDocument}>
-                  Share
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="editor-area editor-area-full">
-          <textarea
-            className="full-textarea"
-            value={content}
-            onChange={handleContentChange}
-            readOnly={isViewOnly}
-            placeholder="Start writing here — everyone with access sees your changes instantly."
-          />
-        </div>
-      </div>
-    )
-  }
-
-  // ---------------- Logged-in: document list (sidebar + empty state) ----------------
-  if (token) {
-    return (
-      <div className="dash-shell">
-        <aside className="sidebar">
-          <div className="brand">Collab Editor</div>
-
-          <form onSubmit={createDocument} className="new-doc-form">
-            <input
-              type="text"
-              placeholder="New document title"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-            />
-            <button type="submit">+ Create</button>
-          </form>
-
-          <div className="search">
-            <input
-              placeholder="Search documents"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          <div className="doc-list">
-            {filteredDocs.length === 0 && (
-              <div className="doc-list-empty">No documents yet</div>
-            )}
-            {filteredDocs.map((doc) => (
-              <div
-                key={doc.id}
-                className="doc-item"
-                onClick={() => openDocument(doc)}
-              >
-                <span className="dot" />
-                <span className="name">{doc.title || 'Untitled document'}</span>
-                <button className="delete-btn" onClick={(e) => deleteDocument(doc.id, e)}>
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <div className="sidebar-foot">
-            Signed in as {email}
-            <button className="logout-link" onClick={() => setToken('')}>
-              Log out
-            </button>
-          </div>
-        </aside>
-
-        <main className="main">
-          <div className="empty-state">
-            <p>Select a document, or create a new one to start writing.</p>
-          </div>
-        </main>
-      </div>
-    )
-  }
-
-  // ---------------- Login / Signup view ----------------
   return (
-    <div className="auth-shell">
-      <div className="auth-card">
-        <div className="auth-brand">Collab Editor</div>
-        <h1 className="auth-heading">
-          {isLogin ? 'Welcome back' : 'Create your account'}
-        </h1>
-        <p className="auth-subheading">
-          {isLogin
-            ? 'Log in to keep writing with your team.'
-            : 'Start writing and collaborating in real time.'}
-        </p>
-
-        <form onSubmit={handleSubmit} className="auth-form">
+    <>
+      <Header />
+      <main className="container narrow">
+        <div className="card stack">
+          <h1>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
           <input
+            className="input"
             type="email"
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="auth-input"
           />
           <input
+            className="input"
             type="password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="auth-input"
           />
-          <button type="submit" className="auth-submit">
-            {isLogin ? 'Log In' : 'Sign Up'}
+          {error && <p className="error">{error}</p>}
+          <button className="btn" onClick={submit} disabled={loading}>
+            {loading ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Sign up'}
           </button>
-        </form>
-
-        {error && <p className="auth-error">{error}</p>}
-
-        <button onClick={() => setIsLogin(!isLogin)} className="auth-switch">
-          {isLogin ? "Need an account? Sign up" : 'Have an account? Log in'}
-        </button>
-      </div>
-    </div>
+          <button
+            className="btn btn-ghost"
+            onClick={() => {
+              setError('')
+              setMode(mode === 'login' ? 'signup' : 'login')
+            }}
+          >
+            {mode === 'login' ? 'Need an account? Sign up' : 'Have an account? Log in'}
+          </button>
+        </div>
+      </main>
+    </>
   )
 }
 
-export default App
+// ---------- dashboard ----------
+function Dashboard({ token, onOpen, onLogout }) {
+  const [docs, setDocs] = useState([])
+  const [title, setTitle] = useState('')
+  const [error, setError] = useState('')
+
+  async function load() {
+    try {
+      const data = await api('/documents', { token })
+      setDocs(Array.isArray(data) ? data : data.documents || [])
+      setError('')
+    } catch (err) {
+      setDocs([])
+      setError(err.message)
+    }
+  }
+
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function create() {
+    if (!title.trim()) return
+    try {
+      await api('/documents', { method: 'POST', token, body: { title, content: '' } })
+      setTitle('')
+      load()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  async function remove(id) {
+    try {
+      await api(`/documents/${id}`, { method: 'DELETE', token })
+      load()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  return (
+    <>
+      <Header onLogout={onLogout} />
+      <main className="container">
+        <h1>Your documents</h1>
+
+        <div className="row">
+          <input
+            className="input"
+            placeholder="New document title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && create()}
+          />
+          <button className="btn" onClick={create}>
+            New document
+          </button>
+        </div>
+
+        {error && <p className="error">{error}</p>}
+
+        <div className="stack">
+          {docs.length === 0 && !error && (
+            <p className="muted">No documents yet. Create one above.</p>
+          )}
+          {docs.map((d) => (
+            <div key={d.id} className="card doc-row">
+              <span className="doc-title">{d.title}</span>
+              <div className="row">
+                <button className="btn" onClick={() => onOpen(d.id)}>
+                  Open
+                </button>
+                <button className="btn btn-danger" onClick={() => remove(d.id)}>
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
+    </>
+  )
+}
+
+// ---------- editor (real-time) ----------
+function Editor({ token, docId, onBack, onLogout }) {
+  const [doc, setDoc] = useState(null)
+  const [content, setContent] = useState('')
+  const [status, setStatus] = useState('Loading…')
+  const socketRef = useRef(null)
+  const saveTimer = useRef(null)
+
+  useEffect(() => {
+    let active = true
+
+    api(`/documents/${docId}`, { token })
+      .then((d) => {
+        if (!active) return
+        setDoc(d)
+        setContent(d.content || '')
+        setStatus('Saved')
+      })
+      .catch((err) => setStatus(err.message))
+
+    const socket = io(API_URL)
+    socketRef.current = socket
+    socket.emit('join-document', docId)
+    socket.on('receive-changes', (incoming) => setContent(incoming))
+
+    return () => {
+      active = false
+      socket.disconnect()
+    }
+  }, [docId, token])
+
+  function handleChange(e) {
+    const value = e.target.value
+    setContent(value)
+    socketRef.current?.emit('send-changes', { docId, content: value })
+
+    setStatus('Saving…')
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      try {
+        await api(`/documents/${docId}`, {
+          method: 'PUT',
+          token,
+          body: { title: doc?.title, content: value },
+        })
+        setStatus('Saved')
+      } catch (err) {
+        setStatus(err.message)
+      }
+    }, 800)
+  }
+
+  return (
+    <>
+      <Header onLogout={onLogout} />
+      <main className="container">
+        <div className="row spread">
+          <button className="btn btn-ghost" onClick={onBack}>
+            Back to documents
+          </button>
+          <span className="muted">{status}</span>
+        </div>
+        <h1>{doc?.title || 'Document'}</h1>
+        <textarea
+          className="input editor"
+          value={content}
+          onChange={handleChange}
+          placeholder="Start typing. Anyone with this document open sees it live."
+        />
+      </main>
+    </>
+  )
+}
+
+// ---------- root ----------
+export default function App() {
+  const [token, setToken] = useState(() => localStorage.getItem('token'))
+  const [docId, setDocId] = useState(null)
+
+  function handleAuth(t) {
+    localStorage.setItem('token', t)
+    setToken(t)
+  }
+
+  function logout() {
+    localStorage.removeItem('token')
+    setToken(null)
+    setDocId(null)
+  }
+
+  if (!token) return <AuthPage onAuth={handleAuth} />
+  if (docId) {
+    return <Editor token={token} docId={docId} onBack={() => setDocId(null)} onLogout={logout} />
+  }
+  return <Dashboard token={token} onOpen={setDocId} onLogout={logout} />
+}
