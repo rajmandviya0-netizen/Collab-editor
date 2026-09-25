@@ -99,6 +99,11 @@ function Dashboard({ token, onOpen, onLogout }) {
   const [title, setTitle] = useState('')
   const [error, setError] = useState('')
 
+  // sharing — only one doc's share box open at a time
+  const [shareOpenId, setShareOpenId] = useState(null)
+  const [shareEmail, setShareEmail] = useState('')
+  const [shareMsg, setShareMsg] = useState('')
+
   async function load() {
     try {
       const data = await api('/documents', { token })
@@ -135,6 +140,27 @@ function Dashboard({ token, onOpen, onLogout }) {
     }
   }
 
+  function toggleShare(id) {
+    setShareMsg('')
+    setShareEmail('')
+    setShareOpenId(shareOpenId === id ? null : id)
+  }
+
+  async function share(id) {
+    if (!shareEmail.trim()) return
+    try {
+      const data = await api(`/documents/${id}/share`, {
+        method: 'POST',
+        token,
+        body: { email: shareEmail.trim() },
+      })
+      setShareMsg(`Shared with ${data.sharedWith}`)
+      setShareEmail('')
+    } catch (err) {
+      setShareMsg(err.message)
+    }
+  }
+
   return (
     <>
       <Header onLogout={onLogout} />
@@ -161,16 +187,42 @@ function Dashboard({ token, onOpen, onLogout }) {
             <p className="muted">No documents yet. Create one above.</p>
           )}
           {docs.map((d) => (
-            <div key={d.id} className="card doc-row">
-              <span className="doc-title">{d.title}</span>
-              <div className="row">
-                <button className="btn" onClick={() => onOpen(d.id)}>
-                  Open
-                </button>
-                <button className="btn btn-danger" onClick={() => remove(d.id)}>
-                  Delete
-                </button>
+            <div key={d.id} className="card doc-row-wrap">
+              <div className="doc-row">
+                <span className="doc-title">{d.title}</span>
+                <div className="row">
+                  <button className="btn" onClick={() => onOpen(d.id)}>
+                    Open
+                  </button>
+                  <button className="btn btn-ghost" onClick={() => toggleShare(d.id)}>
+                    Share
+                  </button>
+                  <button className="btn btn-danger" onClick={() => remove(d.id)}>
+                    Delete
+                  </button>
+                </div>
               </div>
+
+              {shareOpenId === d.id && (
+                <div className="share-box">
+                  <input
+                    className="input"
+                    type="email"
+                    placeholder="Email to share with"
+                    value={shareEmail}
+                    onChange={(e) => setShareEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && share(d.id)}
+                  />
+                  <button className="btn" onClick={() => share(d.id)}>
+                    Share
+                  </button>
+                  {shareMsg && (
+                    <p className={shareMsg.startsWith('Shared') ? 'muted' : 'error'}>
+                      {shareMsg}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
