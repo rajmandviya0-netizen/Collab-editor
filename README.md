@@ -1,119 +1,116 @@
 # Collab Editor
 
-A real-time collaborative document editor — built as a full-stack capstone project. Multiple people can open the same document and see each other's edits live, with presence indicators showing who's currently in the document.
+A real-time collaborative document editor. Sign up, create documents, and edit them with someone else at the same time. Changes appear live in every open tab.
 
-**Live app:** https://collab-editor-tau-ten.vercel.app
+**Live demo:** https://collab-editor-tau-ten.vercel.app
 **Backend API:** https://collab-editor-production-2ddc.up.railway.app
-
----
 
 ## Features
 
-- 🔐 **Authentication** — signup/login with JWT + bcrypt password hashing
-- 📄 **Document CRUD** — create, rename, edit, and delete documents
-- ⚡ **Real-time collaborative editing** — typing in one browser instantly syncs to every other browser viewing the same document (via Socket.io)
-- 👥 **Live presence** — see avatars of everyone currently viewing a document, plus a "someone is typing…" indicator
-- 🔗 **Document sharing** — the owner can share a document with another user by email, giving them full view/edit access
-- 📱 **Sidebar navigation** — browse and search all your documents (owned + shared with you) from one place
-- 🖊️ **Distraction-free full-screen editor** with an expandable, editable title
+- Signup and login with JWT authentication and bcrypt password hashing
+- Create, list, open, update and delete documents
+- Real-time editing over Socket.io: type in one tab and it shows up in the other without a refresh
+- Auto-save to the database while you type
+- Protected routes: users can't read or change other users' documents
+- Consistent dark theme across every page, built on shared CSS variables
 
----
+## Tech stack
 
-## Tech Stack
+| Layer | Tools |
+| --- | --- |
+| Frontend | React (Vite), plain CSS with design tokens |
+| Backend | Node.js, Express, Socket.io |
+| Database | PostgreSQL (Neon) with Prisma ORM |
+| Auth | JWT, bcrypt |
+| Testing | Automated API tests (11 passing) |
+| DevOps | Docker, GitHub Actions CI |
+| Hosting | Vercel (frontend), Railway (backend) |
 
-**Frontend**
-- React (Vite)
-- Socket.io Client
+## Project structure
 
-**Backend**
-- Node.js + Express
-- Socket.io (real-time sync + presence)
-- JWT + bcrypt (authentication)
+```
+Collab-editor/
+├── client/          # React app (Vite)
+│   └── src/
+│       ├── App.jsx      # Auth, dashboard and editor screens
+│       ├── theme.css    # Shared colors, spacing and components
+│       └── main.jsx
+├── server/          # Express API + Socket.io
+│   ├── app.js           # Express app and routes
+│   ├── index.js         # HTTP server and socket handlers
+│   ├── index.test.js    # API tests
+│   ├── prisma/          # Database schema
+│   └── Dockerfile
+└── .github/workflows/ci.yml
+```
 
-**Database**
-- PostgreSQL (hosted on Neon)
-- Prisma ORM
+## Run it locally
 
-**Testing**
-- Jest (11/11 tests passing — signup, login, document CRUD, auth failure cases)
+You need Node.js and a PostgreSQL database (a free Neon database works).
 
-**DevOps**
-- Docker (backend containerized)
-- GitHub Actions (CI — runs tests on every push/PR to main)
-- Railway (backend + database hosting)
-- Vercel (frontend hosting)
-
----
-
-## Architecture
-
-REST routes handle auth and document CRUD (create/read/update/delete). Socket.io handles everything real-time: broadcasting edits, tracking who's in a document, and typing indicators. Every keystroke is also debounce-saved to Postgres via a PUT request, so content isn't lost even if a socket connection drops.
-
----
-
-## Running locally
-
-### Prerequisites
-- Node.js 18+
-- A PostgreSQL database (e.g. a free Neon project)
-
-### 1. Clone the repo
-
+**1. Clone the repo**
+```bash
 git clone https://github.com/rajmandviya0-netizen/Collab-editor.git
 cd Collab-editor
+```
 
-### 2. Backend setup
-
+**2. Start the backend**
+```bash
 cd server
 npm install
-
-Create a .env file in server/:
-
+```
+Create `server/.env`:
+```
 DATABASE_URL=your_postgres_connection_string
-JWT_SECRET=any_random_secret_string
-
-Apply the database schema:
-
-npx prisma migrate dev
-
-Start the backend:
-
+JWT_SECRET=any_long_random_string
+```
+Then:
+```bash
+npx prisma generate
 node index.js
+```
+The API runs on http://localhost:4000.
 
-Backend runs on http://localhost:4000.
-
-### 3. Frontend setup
-
-cd ../client
+**3. Start the frontend** (in a second terminal)
+```bash
+cd client
 npm install
-
-Create a .env file in client/:
-
-VITE_API_URL=http://localhost:4000
-
-Start the frontend:
-
 npm run dev
+```
+Open http://localhost:5173. To point the frontend at a different backend, set `VITE_API_URL` in `client/.env`.
 
-Frontend runs on http://localhost:5173.
+## Tests
 
----
-
-## Running tests
-
+```bash
 cd server
 npm test
+```
+The tests cover signup, login (including a wrong password), document CRUD, and auth failures (no token, invalid token, and blocked cross-user access). They also run automatically on every push through GitHub Actions.
 
----
+## Docker
 
-## How document sharing works
+```bash
+cd server
+docker build -t collab-editor-server .
+docker run --env-file .env -p 4000:4000 collab-editor-server
+```
 
-1. Open a document you own.
-2. Click Share and enter your friend's email (they need an existing account).
-3. They'll now see the document in their own sidebar, and can open, edit, and collaborate on it in real time — same as the owner.
+## Deployment
 
----
+- **Frontend:** Vercel, with the root directory set to `client` and `VITE_API_URL` pointing to the Railway backend
+- **Backend:** Railway, with the root directory set to `server` and `DATABASE_URL` and `JWT_SECRET` set as service variables
+- **CI:** every push to `main` installs dependencies, generates the Prisma client and runs the test suite
 
-## Project status
+## What I learned
 
-Core features (auth, CRUD, real-time sync, presence, sharing) are complete and deployed. Possible next steps: rich text formatting, document version history, and per-user edit permissions (view-only vs. edit access).
+- Building a full-stack app end to end: auth, REST API, database, real-time layer and deployment
+- Real-time sync with WebSockets and how it differs from normal request/response APIs
+- Structuring an Express app so tests hit the real routes
+- Containerizing a Node backend and setting up CI with GitHub Actions
+- Debugging a Prisma client that fell out of sync with its schema
+
+## Ideas for next
+
+- Conflict-free merging for simultaneous edits (CRDTs, for example Yjs)
+- Sharing documents with other users
+- Showing who else is currently editing
